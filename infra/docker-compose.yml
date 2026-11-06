@@ -2,7 +2,7 @@ services:
   mysql:
     image: mysql:8.0
     container_name: express-mysql
-    restart: always
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root123
       MYSQL_DATABASE: express_demo
@@ -10,6 +10,33 @@ services:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ../server/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ../server/database/menuQueries.sql:/docker-entrypoint-initdb.d/02-menu.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping --host=localhost --user=root --password=\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  app:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    container_name: express-app
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root123
+      DB_NAME: express_demo
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
 
 volumes:
   mysql_data:
