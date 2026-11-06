@@ -88,7 +88,11 @@ exports.updateOrderStatus = async (req, res) => {
     }
 
     const { status } = req.body || {};
-    const previousStatus = { PREPARING: "PLACED", DELIVERED: "PREPARING" }[status];
+    const previousStatus = status === "PREPARING"
+        ? "PLACED"
+        : status === "DELIVERED"
+            ? "PREPARING"
+            : null;
     if (!previousStatus) {
         return res.status(400).json({
             success: false,
