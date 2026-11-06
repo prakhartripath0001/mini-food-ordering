@@ -2,6 +2,8 @@
 
 A full-stack, transactional food ordering and order-tracking application built with Node.js, Express, and MySQL/TiDB.
 
+**Live Demo:** https://mini-food-ordering.onrender.com/
+
 ---
 
 ## Features
