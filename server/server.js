@@ -1,10 +1,12 @@
 require("dotenv").config();
 
 const express = require("express");
+const path = require("node:path");
 const db = require("./config/db");
 
 const app = express();
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 const menuRoutes = require("./routes/menuRoutes");
 app.use("/menu", menuRoutes);

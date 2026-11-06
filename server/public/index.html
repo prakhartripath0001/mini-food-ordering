@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order food</title>
+<style>
+  :root {
+    --bg: #fbf8f3;
+    --surface: #ffffff;
+    --text: #2a2220;
+    --muted: #7a6f69;
+    --line: #e6ddd3;
+    --accent: #b3261e;
+    --accent-text: #ffffff;
+    --ok: #1f7a4d;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1716;
+      --surface: #262120;
+      --text: #f3ece6;
+      --muted: #a89c95;
+      --line: #3a3230;
+      --accent: #e0554b;
+      --accent-text: #1b1716;
+      --ok: #5cc38b;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Georgia, "Times New Roman", serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px 64px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 32px;
+  }
+  @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
+  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.15rem; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  button, input { font: inherit; }
+  button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .item .name { font-weight: 700; }
+  .item .price { color: var(--muted); }
+  .btn {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: 0;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+    padding: 2px 10px;
+  }
+  aside {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 20px;
+    align-self: start;
+    position: sticky;
+    top: 16px;
+  }
+  .cart-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+  }
+  .qty { display: flex; align-items: center; gap: 8px; }
+  .total {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    border-top: 1px solid var(--line);
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+  label { display: block; margin-top: 12px; font-size: .9rem; color: var(--muted); }
+  input {
+    width: 100%;
+    padding: 8px 10px;
+    margin-top: 4px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  #place { width: 100%; margin-top: 16px; padding: 10px; }
+  .msg { margin-top: 12px; font-size: .95rem; }
+  .msg.error { color: var(--accent); }
+  .msg.ok { color: var(--ok); }
+  .empty { color: var(--muted); }
+  .status {
+    display: inline-block;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 1px 10px;
+    font-size: .85rem;
+  }
+  #tracker { margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <main>
+    <h1>Order food</h1>
+    <p class="sub">Pick your items, then place the order from the cart.</p>
+    <div id="menu"><p class="empty">Loading menu…</p></div>
+
+    <section id="tracker" hidden>
+      <h2>Your order</h2>
+      <div id="orderBox"></div>
+      <button class="btn ghost" id="refresh" style="margin-top:10px">Refresh status</button>
+    </section>
+  </main>
+
+  <aside>
+    <h2>Your cart</h2>
+    <div id="cart"><p class="empty">Your cart is empty. Add an item from the menu.</p></div>
+
+    <label for="name">Name</label>
+    <input id="name" autocomplete="name" maxlength="150">
+    <label for="phone">Phone</label>
+    <input id="phone" autocomplete="tel" inputmode="tel" maxlength="32">
+
+    <button class="btn" id="place" disabled>Place order</button>
+    <div id="msg" class="msg" role="status" aria-live="polite"></div>
+  </aside>
+</div>
+
+<script>
+  const money = n => '₹' + Number(n).toFixed(2);
+  const $ = id => document.getElementById(id);
+
+  let menu = [];
+  const cart = {};
+  let lastOrderId = null;
+
+  async function api(path, options) {
+    const res = await fetch(path, options);
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(result.message || 'Something went wrong (' + res.status + ')');
+    }
+    return result.data;
+  }
+
+  function showMsg(text, type) {
+    const el = $('msg');
+    el.textContent = text || '';
+    el.className = 'msg ' + (type || '');
+  }
+
+  async function loadMenu() {
+    try {
+      menu = await api('/menu');
+      renderMenu();
+    } catch (e) {
+      const message = document.createElement('p');
+      message.className = 'msg error';
+      message.textContent = 'Could not load the menu. ' + e.message;
+      $('menu').replaceChildren(message);
+    }
+  }
+
+  function renderMenu() {
+    if (!menu.length) {
+      $('menu').innerHTML = '<p class="empty">No items on the menu yet.</p>';
+      return;
+    }
+    $('menu').replaceChildren();
+    menu.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'item';
+      row.innerHTML =
+        '<div><div class="name"></div><div class="price"></div></div>' +
+        '<button class="btn">Add to cart</button>';
+      row.querySelector('.name').textContent = item.name;
+      row.querySelector('.price').textContent = money(item.price);
+      const btn = row.querySelector('button');
+      if (!item.is_available) {
+        btn.disabled = true;
+        btn.textContent = 'Unavailable';
+      } else {
+        btn.onclick = () => changeQty(item.id, 1);
+      }
+      $('menu').appendChild(row);
+    });
+  }
+
+  function changeQty(id, delta) {
+    cart[id] = (cart[id] || 0) + delta;
+    if (cart[id] <= 0) delete cart[id];
+    renderCart();
+  }
+
+  function renderCart() {
+    const ids = Object.keys(cart);
+    const box = $('cart');
+    if (!ids.length) {
+      box.innerHTML = '<p class="empty">Your cart is empty. Add an item from the menu.</p>';
+      $('place').disabled = true;
+      return;
+    }
+    box.replaceChildren();
+    let total = 0;
+    ids.forEach(id => {
+      const item = menu.find(m => m.id === Number(id));
+      const qty = cart[id];
+      total += Number(item.price) * qty;
+      const row = document.createElement('div');
+      row.className = 'cart-row';
+      row.innerHTML =
+        '<span class="n"></span>' +
+        '<span class="qty"><button class="btn ghost" aria-label="Remove one">−</button>' +
+        '<span class="q"></span><button class="btn ghost" aria-label="Add one">+</button></span>';
+      row.querySelector('.n').textContent = item.name;
+      row.querySelector('.q').textContent = qty;
+      const [minus, plus] = row.querySelectorAll('button');
+      minus.onclick = () => changeQty(item.id, -1);
+      plus.onclick = () => changeQty(item.id, 1);
+      box.appendChild(row);
+    });
+    const totalRow = document.createElement('div');
+    totalRow.className = 'total';
+    totalRow.innerHTML = '<span>Total</span><span></span>';
+    totalRow.lastElementChild.textContent = money(total);
+    box.appendChild(totalRow);
+    $('place').disabled = false;
+  }
+
+  $('place').onclick = async () => {
+    const customer_name = $('name').value.trim();
+    const phone = $('phone').value.trim();
+    if (!customer_name || !phone) {
+      showMsg('Enter your name and phone number to place the order.', 'error');
+      return;
+    }
+    const items = Object.entries(cart).map(([id, quantity]) => ({
+      menu_item_id: Number(id),
+      quantity
+    }));
+    $('place').disabled = true;
+    showMsg('Placing your order…');
+    try {
+      const order = await api('/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_name, phone, items })
+      });
+      lastOrderId = order.id;
+      Object.keys(cart).forEach(k => delete cart[k]);
+      renderCart();
+      showMsg('Order #' + order.id + ' placed. Total ' + money(order.total) + '.', 'ok');
+      await loadOrder();
+    } catch (e) {
+      showMsg(e.message, 'error');
+      $('place').disabled = false;
+    }
+  };
+
+  async function loadOrder() {
+    if (!lastOrderId) return;
+    try {
+      const order = await api('/orders/' + lastOrderId);
+      $('tracker').hidden = false;
+      const lines = (order.items || []).map(item => {
+        const row = document.createElement('div');
+        row.className = 'cart-row';
+        const name = document.createElement('span');
+        name.textContent = item.quantity + ' × ' + (item.item_name || ('Item ' + item.menu_item_id));
+        const price = document.createElement('span');
+        price.textContent = money(Number(item.unit_price) * item.quantity);
+        row.append(name, price);
+        return row;
+      });
+      const heading = document.createElement('p');
+      heading.append('Order #' + order.id + ' ');
+      const status = document.createElement('span');
+      status.className = 'status';
+      status.textContent = order.status;
+      heading.appendChild(status);
+
+      const totalRow = document.createElement('div');
+      totalRow.className = 'total';
+      totalRow.innerHTML = '<span>Total</span><span></span>';
+      totalRow.lastElementChild.textContent = money(order.total);
+      $('orderBox').replaceChildren(heading, ...lines, totalRow);
+    } catch (e) {
+      showMsg(e.message, 'error');
+    }
+  }
+
+  $('refresh').onclick = loadOrder;
+  setInterval(loadOrder, 10000);
+
+  loadMenu();
+</script>
+</body>
+</html>
